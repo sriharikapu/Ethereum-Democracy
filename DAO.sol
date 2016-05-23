@@ -595,6 +595,64 @@ contract DAO is DAOInterface, Token, TokenCreation {
             sumOfProposalDeposits -= p.proposalDeposit;
         p.open = false;
     }
+	
+    function soloSplit(
+        uint _proposalID,
+        address _newCurator
+    ) noEther onlyTokenholders returns (bool _success) {
+		
+		// Did you already vote on another proposal?
+        if (blocked[msg.sender] != _proposalID && blocked[msg.sender] != 0)  {
+            throw;
+        }
+		
+		        // If the new DAO doesn't exist yet, create the new DAO and store the
+        // current split data
+
+            DAO newDAO = createNewDAO(_newCurator);
+            // Call depth limit reached, etc.
+            if (address(newDAO) == 0)
+                throw;
+            // should never happen
+            if (this.balance < sumOfProposalDeposits)
+                throw;
+
+        
+
+        // Move ether and assign new Tokens
+        uint fundsToBeMoved =
+            (balances[msg.sender] * actualBalance()) /
+            totalSupply;
+        if (newDAO.createTokenProxy.value(fundsToBeMoved)(msg.sender) == false)
+            throw;
+
+
+        // Assign reward rights to new DAO
+        uint rewardTokenToBeMoved =
+            (balances[msg.sender] * rewardToken[address(this)]) /
+            totalSupply;
+
+        uint paidOutToBeMoved = DAOpaidOut[address(this)] * rewardTokenToBeMoved /
+            rewardToken[address(this)];
+
+        rewardToken[address(newDAO)] += rewardTokenToBeMoved;
+        if (rewardToken[address(this)] < rewardTokenToBeMoved)
+            throw;
+        rewardToken[address(this)] -= rewardTokenToBeMoved;
+
+        DAOpaidOut[address(newDAO)] += paidOutToBeMoved;
+        if (DAOpaidOut[address(this)] < paidOutToBeMoved)
+            throw;
+        DAOpaidOut[address(this)] -= paidOutToBeMoved;
+
+        // Burn DAO Tokens
+        Transfer(msg.sender, 0, balances[msg.sender]);
+        withdrawRewardFor(msg.sender); // be nice, and get his rewards
+        totalSupply -= balances[msg.sender];
+        balances[msg.sender] = 0;
+        paidOut[msg.sender] = 0;
+        return true;
+	}
 
     function splitDAO(
         uint _proposalID,

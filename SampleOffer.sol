@@ -21,7 +21,11 @@ Sample Proposal from a Contractor to the DAO.
 Feel free to use as a template for your own proposal.
 */
 
-import "./DAO.sol";
+//import "./DAO.sol";
+
+contract DAO {
+	address public DAOrewardAccount;
+}
 
 contract SampleOffer {
 
