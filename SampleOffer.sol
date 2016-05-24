@@ -118,7 +118,7 @@ contract SampleOffer {
         throw; // this is a business contract, no donations
     }
 
-    // interface for Ethereum Computer
+    // interface for USN
     function payOneTimeReward() returns(bool) {
         // client DAO should not be able to pay itself generating
         // "free" reward tokens
