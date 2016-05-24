@@ -43,6 +43,8 @@ contract DAOInterface {
     // Denotes the maximum proposal deposit that can be given. It is given as
     // a fraction of total Ether spent plus balance of the DAO
     uint constant maxDepositDivisor = 100;
+	
+	address constant parentDAO = 0x112233;
 
     // Proposals to spend the DAO's ether or to choose a new Curator
     Proposal[] public proposals;
@@ -409,7 +411,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
             throw;
         } else if (
             !_newCurator
-            && (!isRecipientAllowed(_recipient) || (_debatingPeriod <  minProposalDebatePeriod))
+            && (!allowedRecipients[_recipient] || (_debatingPeriod <  minProposalDebatePeriod))
         ) {
             throw;
         }
@@ -530,7 +532,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
         // If the curator removed the recipient from the whitelist, close the proposal
         // in order to free the deposit and allow unblocking of voters
-        if (!isRecipientAllowed(p.recipient)) {
+        if (!allowedRecipients[p.recipient]) {
             closeProposal(_proposalID);
             p.creator.send(p.proposalDeposit);
             return;
@@ -865,17 +867,6 @@ contract DAO is DAOInterface, Token, TokenCreation {
     }
 
 
-    function isRecipientAllowed(address _recipient) internal returns (bool _isAllowed) {
-        if (allowedRecipients[_recipient]
-            || (_recipient == address(extraBalance)
-                // only allowed when at least the amount held in the
-                // extraBalance account has been spent from the DAO
-                && totalRewardToken > extraBalance.accumulatedInput()))
-            return true;
-        else
-            return false;
-    }
-
     function actualBalance() constant returns (uint _actualBalance) {
         return this.balance - sumOfProposalDeposits;
     }
@@ -930,6 +921,17 @@ contract DAO is DAOInterface, Token, TokenCreation {
     function unblockMe() returns (bool) {
         return isBlocked(msg.sender);
     }
+	
+	function combinedBalanceOf(address _address){
+		DAO(parentDAO).balanceOf(_address) + balanceOf(_address);
+	}
+	
+	// aprve DAO to transfer your tokens prior to that
+	function swapTokens(address _address){
+		uint balance = DAO(parentDAO).balanceOf(_address);
+		if (DAO(parentDAO).transferFrom(_address, 0, balance))
+			balances[msg.sender] += balance;
+	}
 }
 
 contract DAO_Creator {

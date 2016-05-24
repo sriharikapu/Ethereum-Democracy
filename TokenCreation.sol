@@ -88,6 +88,7 @@ contract TokenCreation is TokenCreationInterface, Token {
         minTokensToCreate = _minTokensToCreate;
         privateCreation = _privateCreation;
         extraBalance = new ManagedAccount(address(this), true);
+		isFueled = true;
     }
 
     function createTokenProxy(address _tokenHolder) returns (bool success) {
