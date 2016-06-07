@@ -43,18 +43,24 @@ def which(program):
     return None
 
 
-def determine_binary(given_binary, name):
+def determine_binary(given_binary, name, is_mandatory):
     """
     Determines if a path to a binary is correct and if not tries to
-    get a generic one by looking at the system PATH
+    get a generic one by looking at the system PATH. If all fails, then
+    the tests will fail with an appropriate error message.
     """
+    ret_binary = None
     if given_binary:
         if is_exe(given_binary):
-            return given_binary
+            ret_binary = given_binary
     else:
         # try to find binary in the PATH
-        return which(name)
-    return None
+        ret_binary = which(name)
+
+    if is_mandatory and not ret_binary:
+        print("ERROR: Could not find binary '{}'".format(given_binary))
+        sys.exit(1)
+    return ret_binary
 
 
 def ts_now():
@@ -195,21 +201,36 @@ def extract_test_dict(name, output):
     return result
 
 
+def is_int(v):
+    return isinstance(v, (int, long))
+
+
+def cmp_floats(a, b):
+    return abs(a - b) <= 0.01
+
+
+def cmp_string_to_int(string, num):
+    try:
+        return int(string) == num
+    except:
+        return cmp_floats(float(string), float(num))
+
+
 def compare_values(got, expect):
     if isinstance(got, float) ^ isinstance(expect, float):
-        if isinstance(got, int) and expect % 1 <= 0.01:
-            return int(expect) == got
-        elif isinstance(expect, int) and got % 1 <= 0.01:
-            return int(got) == expect
+        if is_int(got) or is_int(expect):
+            return abs(expect - got) % 1 <= 0.01
         else:
-            print("ERROR: float compared with non-float")
+            print("ERROR: float comparison failure")
             return False
     if isinstance(got, float):
-        return abs(got - expect) <= 0.01
-    elif isinstance(got, basestring) and isinstance(expect, int):
-        return int(got) == expect
-    elif isinstance(expect, basestring) and isinstance(got, int):
-        return got == int(expect)
+        return cmp_floats(got, expect)
+    elif isinstance(got, basestring) and is_int(expect):
+        return cmp_string_to_int(got, expect)
+    elif isinstance(expect, basestring) and is_int(got):
+        return cmp_string_to_int(expect, got)
+    elif isinstance(expect, basestring) and isinstance(got, float):
+        return cmp_floats(float(expect), got)
     else:
         return got == expect
 
@@ -333,23 +354,32 @@ def re_replace_or_die(string, varname, value):
 def edit_dao_source(
         contracts_dir,
         keep_limits,
+        min_proposal_debate,
+        min_split_debate,
         halve_minquorum,
         split_exec_period,
         normal_pricing,
-        extra_balance_refund):
+        extra_balance_refund,
+        offer_payment_period):
     with open(os.path.join(contracts_dir, 'DAO.sol'), 'r') as f:
         contents = f.read()
 
     # remove all limits that would make testing impossible
-    if not keep_limits:
-        re.sub
-        contents = re_replace_or_die(contents, "minProposalDebatePeriod", "1")
-        contents = re_replace_or_die(contents, "minSplitDebatePeriod", "1")
-        contents = re_replace_or_die(
-            contents,
-            "splitExecutionPeriod",
-            str(split_exec_period)
-        )
+    contents = re_replace_or_die(
+        contents,
+        "minProposalDebatePeriod",
+        str(min_proposal_debate)
+    )
+    contents = re_replace_or_die(
+        contents,
+        "minSplitDebatePeriod",
+        "1"
+    )
+    contents = re_replace_or_die(
+        contents,
+        "splitExecutionPeriod",
+        str(split_exec_period)
+    )
 
     if not extra_balance_refund:
         contents = re_replace_or_die(contents, "creationGracePeriod", "1")
@@ -406,7 +436,7 @@ def edit_dao_source(
     with open(new_path, "w") as f:
         f.write(contents)
 
-    # now edit TokenCreation source
+    # edit TokenCreation source
     with open(os.path.join(contracts_dir, 'TokenCreation.sol'), 'r') as f:
         contents = f.read()
 
@@ -417,7 +447,48 @@ def edit_dao_source(
     with open(os.path.join(contracts_dir, 'TokenCreationCopy.sol'), "w") as f:
         f.write(contents)
 
+    # edit Offer.sol
+    with open(os.path.join(contracts_dir, 'Offer.sol'), 'r') as f:
+        contents = f.read()
+
+    contents = str_replace_or_die(
+        contents,
+        'import "./DAO.sol";',
+        'import "./DAOcopy.sol";'
+    )
+    contents = str_replace_or_die(contents, '(1 days)', str(offer_payment_period))
+    with open(os.path.join(contracts_dir, 'OfferCopy.sol'), "w") as f:
+        f.write(contents)
+
+    # edit RewardOffer.sol
+    with open(os.path.join(contracts_dir, 'RewardOffer.sol'), 'r') as f:
+        contents = f.read()
+
+    contents = str_replace_or_die(
+        contents,
+        'import "./Offer.sol";',
+        'import "./OfferCopy.sol";'
+    )
+    with open(os.path.join(contracts_dir, 'RewardOfferCopy.sol'), "w") as f:
+        f.write(contents)
+
+    # edit USNRewardPayOut.sol
+    with open(os.path.join(contracts_dir, 'USNRewardPayOut.sol'), 'r') as f:
+        contents = f.read()
+
+    contents = str_replace_or_die(
+        contents,
+        'import "./RewardOffer.sol";',
+        'import "./RewardOfferCopy.sol";'
+    )
+    with open(os.path.join(contracts_dir, 'USNRewardPayOutCopy.sol'), "w") as f:
+        f.write(contents)
+
     return new_path
+
+
+def argtype_is_int(t):
+    return t in ["uint256", "uint128"]
 
 
 def calculate_bytecode(function_name, *args):
@@ -454,7 +525,7 @@ def calculate_bytecode(function_name, *args):
     for arg in args:
         arg_type = arg[0]
         arg_val = arg[1]
-        if arg_type == "bool" or arg_type == "uint256":
+        if arg_type == "bool" or argtype_is_int(arg_type):
             if arg_type == "bool":
                 arg_val = 1 if arg[1] is True else 0
             bytecode += "{0:0{1}x}".format(int(arg_val), 64)

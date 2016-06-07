@@ -33,8 +33,8 @@ class TestContext():
         self.save_file = os.path.join(datadir, "saved")
         self.templates_dir = os.path.join(self.tests_dir, 'templates')
         self.contracts_dir = os.path.dirname(self.tests_dir)
-        self.solc = determine_binary(args.solc, 'solc')
-        self.geth = determine_binary(args.geth, 'geth')
+        self.solc = determine_binary(args.solc, 'solc', args.scenario != 'none')
+        self.geth = determine_binary(args.geth, 'geth', args.scenario != 'none')
 
         if args.describe_scenarios:
             self.describe_scenarios()
@@ -97,6 +97,7 @@ class TestContext():
         rm_file(os.path.join(data_dir, "saved"))
 
     def run_script(self, script):
+        print("Running '{}' script".format(script))
         if script == 'accounts.js':
             return subprocess.check_output([
                 self.geth,
@@ -113,7 +114,6 @@ class TestContext():
                 script
             ])
         else:
-            print("Running '{}' script".format(script))
             return subprocess.check_output([
                 self.geth,
                 "--networkid",
@@ -153,28 +153,33 @@ class TestContext():
         dao_contract = edit_dao_source(
             self.contracts_dir,
             keep_limits,
+            1,  # min_proposal_debate
+            1,  # min_proposal_split
             self.args.proposal_halveminquorum,
             self.args.split_execution_period,
             self.scenario_uses_extrabalance(),
-            self.args.scenario == "fuel_fail_extrabalance"
+            self.args.scenario == "fuel_fail_extrabalance",
+            self.args.deploy_offer_payment_period
         )
-
-        res = self.compile_contract(dao_contract)
+        usn = os.path.join(self.contracts_dir, "USNRewardPayOutCopy.sol")
+        res = self.compile_contract(usn)
         contract = res["contracts"]["DAO"]
         DAOCreator = res["contracts"]["DAO_Creator"]
         self.creator_abi = DAOCreator["abi"]
         self.creator_bin = DAOCreator["bin"]
         self.dao_abi = contract["abi"]
         self.dao_bin = contract["bin"]
-
-        offer = os.path.join(self.contracts_dir, "SampleOffer.sol")
-        res = self.compile_contract(offer)
-        self.offer_abi = res["contracts"]["SampleOffer"]["abi"]
-        self.offer_bin = res["contracts"]["SampleOffer"]["bin"]
+        self.offer_abi = res["contracts"]["RewardOffer"]["abi"]
+        self.offer_bin = res["contracts"]["RewardOffer"]["bin"]
+        self.usn_abi = res["contracts"]["USNRewardPayOut"]["abi"]
+        self.usn_bin = res["contracts"]["USNRewardPayOut"]["bin"]
 
         # also delete the temporary created files
         rm_file(os.path.join(self.contracts_dir, "DAOcopy.sol"))
         rm_file(os.path.join(self.contracts_dir, "TokenCreationCopy.sol"))
+        rm_file(os.path.join(self.contracts_dir, "RewardOfferCopy.sol"))
+        rm_file(os.path.join(self.contracts_dir, "OfferCopy.sol"))
+        rm_file(os.path.join(self.contracts_dir, "USNRewardPayOutCopy.sol"))
 
     def create_js_file(self, substitutions, cb_before_creation=None):
         """
