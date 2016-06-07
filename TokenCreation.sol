@@ -68,10 +68,6 @@ contract TokenCreationInterface {
     /// not reach its minimum fueling goal
     function refund();
 
-    /// @return The divisor used to calculate the token creation rate during
-    /// the creation phase
-    function divisor() constant returns (uint divisor);
-
     event FuelingToDate(uint value);
     event CreatedToken(address indexed to, uint amount);
     event Refund(address indexed to, uint value);
@@ -87,19 +83,16 @@ contract TokenCreation is TokenCreationInterface, Token {
         closingTime = _closingTime;
         minTokensToCreate = _minTokensToCreate;
         privateCreation = _privateCreation;
-        extraBalance = new ManagedAccount(address(this), true);
-		isFueled = true;
+		isFueled = false;
     }
 
     function createTokenProxy(address _tokenHolder) returns (bool success) {
         if (now < closingTime && msg.value > 0
             && (privateCreation == 0 || privateCreation == msg.sender)) {
 
-            uint token = (msg.value * 20) / divisor();
-            extraBalance.call.value(msg.value - token)();
+            uint token = msg.value;
             balances[_tokenHolder] += token;
             totalSupply += token;
-            weiGiven[_tokenHolder] += msg.value;
             CreatedToken(_tokenHolder, token);
             if (totalSupply >= minTokensToCreate && !isFueled) {
                 isFueled = true;
@@ -112,32 +105,11 @@ contract TokenCreation is TokenCreationInterface, Token {
 
     function refund() noEther {
         if (now > closingTime && !isFueled) {
-            // Get extraBalance - will only succeed when called for the first time
-            if (extraBalance.balance >= extraBalance.accumulatedInput())
-                extraBalance.payOut(address(this), extraBalance.accumulatedInput());
-
-            // Execute refund
-            if (msg.sender.call.value(weiGiven[msg.sender])()) {
-                Refund(msg.sender, weiGiven[msg.sender]);
+            if (msg.sender.call.value(balances[msg.sender])()) {
+                Refund(msg.sender, balances[msg.sender]);
                 totalSupply -= balances[msg.sender];
                 balances[msg.sender] = 0;
-                weiGiven[msg.sender] = 0;
             }
-        }
-    }
-
-    function divisor() constant returns (uint divisor) {
-        // The number of (base unit) tokens per wei is calculated
-        // as `msg.value` * 20 / `divisor`
-        // The fueling period starts with a 1:1 ratio
-        if (closingTime - 2 weeks > now) {
-            return 20;
-        // Followed by 10 days with a daily creation rate increase of 5%
-        } else if (closingTime - 4 days > now) {
-            return (20 + (now - (closingTime - 2 weeks)) / (1 days));
-        // The last 4 days there is a constant creation rate ratio of 1:1.5
-        } else {
-            return 30;
         }
     }
 }

@@ -43,8 +43,10 @@ contract DAOInterface {
     // Denotes the maximum proposal deposit that can be given. It is given as
     // a fraction of total Ether spent plus balance of the DAO
     uint constant maxDepositDivisor = 100;
-	
-	address constant parentDAO = 0x112233;
+    // Grace period for splitting after voting did end
+    uint constant splitGracePeriod = 3 days;
+    // address of parent DAO
+    address constant parentDAO = 0x112233;
 
     // Proposals to spend the DAO's ether or to choose a new Curator
     Proposal[] public proposals;
@@ -372,7 +374,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
         if (address(DAOrewardAccount) == 0)
             throw;
         lastTimeMinQuorumMet = now;
-        minQuorumDivisor = 5; // sets the minimal quorum to 20%
+        minQuorumDivisor = 7; // sets the minimal quorum to 14.2%
         proposals.length = 1; // avoids a proposal with ID 0 because it is used
 
         allowedRecipients[address(this)] = true;
@@ -419,8 +421,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
         if (_debatingPeriod > 8 weeks)
             throw;
 
-        if (!isFueled
-            || now < closingTime
+        if (now < closingTime
             || (msg.value < proposalDeposit && !_newCurator)) {
 
             throw;
@@ -519,13 +520,14 @@ contract DAO is DAOInterface, Token, TokenCreation {
             ? splitExecutionPeriod
             : executeProposalPeriod;
         // If we are over deadline and waiting period, assert proposal is closed
-        if (p.open && now > p.votingDeadline + waitPeriod) {
+        if (p.open && now > p.votingDeadline + splitGracePeriod + waitPeriod) {
             closeProposal(_proposalID);
             return;
         }
 
         // Check if the proposal can be executed
-        if (now < p.votingDeadline  // has the voting deadline arrived?
+        if (!isFueled
+            || now < p.votingDeadline + splitGracePeriod // has the voting deadline arrived?
             // Have the votes been counted?
             || !p.open
             || p.proposalPassed // anyone trying to call us recursively?
@@ -548,9 +550,9 @@ contract DAO is DAOInterface, Token, TokenCreation {
         if (p.amount > actualBalance())
             proposalCheck = false;
 
-        uint quorum = p.yea + p.nay;
+        uint quorum = p.yea;
 
-        // require 53% for calling newContract()
+        // require max quorum for calling newContract()
         if (_transactionData.length >= 4 && _transactionData[0] == 0x68
             && _transactionData[1] == 0x37 && _transactionData[2] == 0xff
             && _transactionData[3] == 0x1e
@@ -559,18 +561,20 @@ contract DAO is DAOInterface, Token, TokenCreation {
                 proposalCheck = false;
         }
 
-        if (quorum >= minQuorum(p.amount)) {
+        uint minimalQuorum = minQuorum(p.amount);
+
+        if (quorum >= minimalQuorum) {
             if (!p.creator.send(p.proposalDeposit))
                 throw;
 
             lastTimeMinQuorumMet = now;
-            // set the minQuorum to 20% again, in the case it has been reached
-            if (quorum > totalSupply / 5)
-                minQuorumDivisor = 5;
+            // set the minQuorum to 14.3% again, in the case it has been reached
+            if (quorum > totalSupply / 7)
+                minQuorumDivisor = 7;
         }
 
         // Execute result
-        if (quorum >= minQuorum(p.amount) && p.yea > p.nay && proposalCheck) {
+        if (quorum >= minimalQuorum && p.yea > p.nay && proposalCheck) {
             // we are setting this here before the CALL() value transfer to
             // assure that in the case of a malicious recipient contract trying
             // to call executeProposal() recursively money can't be transferred
@@ -586,7 +590,6 @@ contract DAO is DAOInterface, Token, TokenCreation {
             // related addresses. Proxy addresses should be forbidden by the curator.
             if (p.recipient != address(this) && p.recipient != address(rewardAccount)
                 && p.recipient != address(DAOrewardAccount)
-                && p.recipient != address(extraBalance)
                 && p.recipient != address(curator)) {
 
                 rewardToken[address(this)] += p.amount;
@@ -607,39 +610,27 @@ contract DAO is DAOInterface, Token, TokenCreation {
             sumOfProposalDeposits -= p.proposalDeposit;
         p.open = false;
     }
-	
-    function soloSplit(
+
+    function withdraw(
         uint _proposalID,
         address _newCurator
     ) noEther onlyTokenholders returns (bool _success) {
-		
-		// Did you already vote on another proposal?
+
+        unblockMe();
+
+        // Did you already vote on another proposal?
         if (blocked[msg.sender] != _proposalID && blocked[msg.sender] != 0)  {
             throw;
         }
-		
-		        // If the new DAO doesn't exist yet, create the new DAO and store the
-        // current split data
 
-            DAO newDAO = createNewDAO(_newCurator);
-            // Call depth limit reached, etc.
-            if (address(newDAO) == 0)
-                throw;
-            // should never happen
-            if (this.balance < sumOfProposalDeposits)
-                throw;
-
-        
-
-        // Move ether and assign new Tokens
+        // Move ether
         uint fundsToBeMoved =
             (balances[msg.sender] * actualBalance()) /
             totalSupply;
-        if (newDAO.createTokenProxy.value(fundsToBeMoved)(msg.sender) == false)
-            throw;
 
+		msg.sender.call.value(fundsToBeMoved);
 
-        // Assign reward rights to new DAO
+        // Assign reward rights
         uint rewardTokenToBeMoved =
             (balances[msg.sender] * rewardToken[address(this)]) /
             totalSupply;
@@ -647,12 +638,12 @@ contract DAO is DAOInterface, Token, TokenCreation {
         uint paidOutToBeMoved = DAOpaidOut[address(this)] * rewardTokenToBeMoved /
             rewardToken[address(this)];
 
-        rewardToken[address(newDAO)] += rewardTokenToBeMoved;
+        rewardToken[msg.sender] += rewardTokenToBeMoved;
         if (rewardToken[address(this)] < rewardTokenToBeMoved)
             throw;
         rewardToken[address(this)] -= rewardTokenToBeMoved;
 
-        DAOpaidOut[address(newDAO)] += paidOutToBeMoved;
+        DAOpaidOut[msg.sender] += paidOutToBeMoved;
         if (DAOpaidOut[address(this)] < paidOutToBeMoved)
             throw;
         DAOpaidOut[address(this)] -= paidOutToBeMoved;
@@ -712,7 +703,6 @@ contract DAO is DAOInterface, Token, TokenCreation {
             p.splitData[0].totalSupply;
         if (p.splitData[0].newDAO.createTokenProxy.value(fundsToBeMoved)(msg.sender) == false)
             throw;
-
 
         // Assign reward rights to new DAO
         uint rewardTokenToBeMoved =
@@ -889,7 +879,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
 
     function minQuorum(uint _value) internal constant returns (uint _minQuorum) {
-        // minimum of 20% and maximum of 53.33%
+        // minimum of 20% and maximum of 47.6%
         return totalSupply / minQuorumDivisor +
             (_value * totalSupply) / (3 * (actualBalance() + rewardToken[address(this)]));
     }
@@ -940,17 +930,23 @@ contract DAO is DAOInterface, Token, TokenCreation {
     function unblockMe() returns (bool) {
         return isBlocked(msg.sender);
     }
-	
+
 	function combinedBalanceOf(address _address){
 		DAO(parentDAO).balanceOf(_address) + balanceOf(_address);
 	}
-	
-	// aprve DAO to transfer your tokens prior to that
-	function swapTokens(address _address){
+
+	// approve DAO to transfer your tokens prior to that
+	function swapTokens(address _address) {
 		uint balance = DAO(parentDAO).balanceOf(_address);
-		if (DAO(parentDAO).transferFrom(_address, 0, balance))
+		if (DAO(parentDAO).transferFrom(_address, this, balance)) {
 			balances[msg.sender] += balance;
-	}
+            totalSupply += balance;
+            if (totalSupply >= minTokensToCreate && !isFueled) {
+                isFueled = true;
+                FuelingToDate(totalSupply);
+            }
+        }
+    }
 }
 
 contract DAO_Creator {
