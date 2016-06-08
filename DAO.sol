@@ -45,8 +45,10 @@ contract DAOInterface {
     uint constant maxDepositDivisor = 100;
     // Grace period for splitting after voting did end
     uint constant splitGracePeriod = 3 days;
+    // Time for vote freeze. A proposal needs to have majority support before votingDeadline - preSupportTime
+    uint constant preSupportTime = 2 days;
     // address of parent DAO
-    address constant parentDAO = 0x112233;
+    address constant parentDAO = 0xbb9bc244d798123fde783fcc1c72d3bb8c189413;
 
     // Proposals to spend the DAO's ether or to choose a new Curator
     Proposal[] public proposals;
@@ -125,6 +127,9 @@ contract DAOInterface {
         bool newCurator;
         // Data needed for splitting the DAO
         SplitData[] splitData;
+        // dependencies in other proposals. List of proposal IDs and list defining whether the other proposal needs to have passed or failed
+        uint[] dependencies;
+        bool[] dependenciesType;
         // true if more tokens are in favour of the proposal than opposed to it at
         // least 2 days before the voting deadline
         bool preSupport;
@@ -213,7 +218,9 @@ contract DAOInterface {
         string _description,
         bytes _transactionData,
         uint _debatingPeriod,
-        bool _newCurator
+        bool _newCurator,
+        uint[] dependencies,
+        bool[] dependenciesType
     ) onlyTokenholders returns (uint _proposalID);
 
     /// @notice Check that the proposal with the ID `_proposalID` matches the
@@ -419,10 +426,16 @@ contract DAO is DAOInterface, Token, TokenCreation {
         string _description,
         bytes _transactionData,
         uint _debatingPeriod,
-        bool _newCurator
+        bool _newCurator,
+        uint[] _dependencies,
+        bool[] _dependenciesType
     ) onlyTokenholders returns (uint _proposalID) {
 
         // Sanity check
+
+        if (_dependencies.length != _dependenciesType.length)
+            throw;
+
         if (_newCurator && (
             _amount != 0
             || _transactionData.length != 0
@@ -471,6 +484,8 @@ contract DAO is DAOInterface, Token, TokenCreation {
             p.splitData.length++;
         p.creator = msg.sender;
         p.proposalDeposit = msg.value;
+        p.dependencies = _dependencies;
+        p.dependenciesType = _dependenciesType;
 
         sumOfProposalDeposits += msg.value;
 
@@ -529,7 +544,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
     function verifyPreSupport(uint _proposalID) {
         Proposal p = proposals[_proposalID];
-        if (now < p.votingDeadline - 2 days) {
+        if (now < p.votingDeadline - preSupportTime) {
             if (p.yea > p.nay) {
                 p.preSupport = true;
             }
@@ -565,6 +580,13 @@ contract DAO is DAOInterface, Token, TokenCreation {
             || p.proposalHash != sha3(p.recipient, p.amount, _transactionData)) {
 
             throw;
+        }
+
+        // check dependencies
+        for (uint _p = 0; _p < p.dependencies.length; _p++) {
+            Proposal requiredProposal = proposals[p.dependencies[_p]];
+            if (requiredProposal.proposalPassed != p.dependenciesType[_p])
+                throw;
         }
 
         // If the curator removed the recipient from the whitelist, close the proposal
