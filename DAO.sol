@@ -645,9 +645,9 @@ contract DAO is DAOInterface, Token, TokenCreation {
                 proposalCheck = false;
         }
 
-        uint minimalQuorum = minQuorum(p.amount);
+        uint minimumQuorum = minQuorum(p.amount);
 
-        if (quorum >= minimalQuorum) {
+        if (quorum >= minimumQuorum) {
             if (!p.creator.send(p.proposalDeposit))
                 throw;
 
@@ -658,7 +658,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
         }
 
         // Execute result
-        if (quorum >= minimalQuorum && p.yea > p.nay && proposalCheck) {
+        if (quorum >= minimumQuorum && p.yea > p.nay && proposalCheck) {
             // we are setting this here before the CALL() value transfer to
             // assure that in the case of a malicious recipient contract trying
             // to call executeProposal() recursively money can't be transferred
@@ -948,6 +948,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
 
     function changeAllowedRecipients(address _recipient, bool _allowed) noEther external returns (bool _success) {
+        // only allow the curator and the DAO itself (only removing addresses) to make changes to the whitelist
         if (msg.sender != curator && (msg.sender != address(this) || _allowed))
             throw;
         if (_recipient == address(this))
@@ -964,7 +965,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
 
     function minQuorum(uint _value) internal constant returns (uint _minQuorum) {
-        // minimum of 20% and maximum of 47.6%
+        // minimum of 14.3% and maximum of 47.6%
         return totalSupply / minQuorumDivisor +
             (_value * totalSupply) / (3 * (actualBalance() + rewardToken[address(this)]));
     }
