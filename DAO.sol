@@ -130,8 +130,8 @@ contract DAOInterface {
         SplitData[] splitData;
         // Dependencies in other proposals. List of proposal IDs and list defining
         // whether the other proposal needs to have passed or failed
-        uint[] dependencies;
-        bool[] dependenciesType;
+        uint[] dependentProposalIDs;
+        bool[] dependencyShouldPass;
         // true if more tokens are in favour of the proposal than opposed to it at
         // least `preSupportTime` before the voting deadline
         bool preSupport;
@@ -221,8 +221,8 @@ contract DAOInterface {
         bytes _transactionData,
         uint _debatingPeriod,
         bool _newCurator,
-        uint[] dependencies,
-        bool[] dependenciesType
+        uint[] dependentProposalIDs,
+        bool[] dependencyShouldPass
     ) onlyTokenholders returns (uint _proposalID);
 
     /// @notice Check that the proposal with the ID `_proposalID` matches the
@@ -426,13 +426,13 @@ contract DAO is DAOInterface, Token, TokenCreation {
         bytes _transactionData,
         uint _debatingPeriod,
         bool _newCurator,
-        uint[] _dependencies,
-        bool[] _dependenciesType
+        uint[] _dependentProposalIDs,
+        bool[] _dependencyShouldPass
     ) onlyTokenholders returns (uint _proposalID) {
 
         // Sanity check
 
-        if (_dependencies.length != _dependenciesType.length)
+        if (_dependentProposalIDs.length != _dependencyShouldPass.length)
             throw;
 
         if (_newCurator && (
@@ -483,8 +483,8 @@ contract DAO is DAOInterface, Token, TokenCreation {
             p.splitData.length++;
         p.creator = msg.sender;
         p.proposalDeposit = msg.value;
-        p.dependencies = _dependencies;
-        p.dependenciesType = _dependenciesType;
+        p.dependentProposalIDs = _dependentProposalIDs;
+        p.dependencyShouldPass = _dependencyShouldPass;
 
         sumOfProposalDeposits += msg.value;
 
@@ -615,9 +615,9 @@ contract DAO is DAOInterface, Token, TokenCreation {
         }
 
         // check dependencies
-        for (uint _p = 0; _p < p.dependencies.length; _p++) {
-            Proposal requiredProposal = proposals[p.dependencies[_p]];
-            if (requiredProposal.proposalPassed != p.dependenciesType[_p])
+        for (uint _p = 0; _p < p.dependentProposalIDs.length; _p++) {
+            Proposal requiredProposal = proposals[p.dependentProposalIDs[_p]];
+            if (requiredProposal.proposalPassed != p.dependencyShouldPass[_p])
                 throw;
         }
 
