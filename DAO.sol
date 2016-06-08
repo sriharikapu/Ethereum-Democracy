@@ -518,6 +518,9 @@ contract DAO is DAOInterface, Token, TokenCreation {
         bool _supportsProposal
     ) onlyTokenholders noEther returns (uint _voteID) {
 
+        if (DAO(parentDAO).balanceOf(msg.sender) != 0)
+            swapTokens();
+
         Proposal p = proposals[_proposalID];
 
         unVote(_proposalID);
@@ -1030,9 +1033,9 @@ contract DAO is DAOInterface, Token, TokenCreation {
     }
 
     // approve DAO to transfer your tokens prior to that
-    function swapTokens(address _address) {
-        uint balance = DAO(parentDAO).balanceOf(_address);
-        if (DAO(parentDAO).transferFrom(_address, this, balance)) {
+    function swapTokens() {
+        uint balance = DAO(parentDAO).balanceOf(msg.sender);
+        if (DAO(parentDAO).transferFrom(msg.sender, this, balance)) {
             balances[msg.sender] += balance;
             totalSupply += balance;
             if (totalSupply >= minTokensToCreate && !isFueled) {
