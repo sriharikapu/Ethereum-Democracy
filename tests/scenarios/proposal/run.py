@@ -1,5 +1,5 @@
 import random
-from utils import arr_str, create_votes_array
+from utils import arr_str, create_votes_array, bool_to_str
 
 scenario_description = (
     "Create a proposal to send an amount of ether to the SampleOffer contract."
@@ -32,16 +32,16 @@ def run(ctx):
     yay, nay = count_token_votes(ctx.token_amounts, votes)
     ctx.create_js_file(substitutions={
         "dao_abi": ctx.dao_abi,
-        "dao_address": ctx.dao_addr,
+        "dao_address": ctx.dao_address,
         "offer_abi": ctx.offer_abi,
-        "offer_address": ctx.offer_addr,
+        "offer_address": ctx.offer_address,
         "offer_amount": ctx.args.deploy_total_costs,
         "offer_desc": 'Test Proposal',
         "proposal_deposit": ctx.args.proposal_deposit,
         "transaction_bytecode": '0x2ca15122',  # solc --hashes SampleOffer.sol
         "debating_period": ctx.args.proposal_debate_seconds,
         "votes": arr_str(votes),
-        "should_halve_minquorum": str(ctx.args.proposal_halveminquorum).lower()
+        "should_halve_minquorum": bool_to_str(ctx.args.proposal_halveminquorum)
     })
     print(
         "Notice: Debate period is {} seconds so the test will wait "

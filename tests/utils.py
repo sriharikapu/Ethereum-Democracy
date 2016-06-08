@@ -5,6 +5,7 @@ import os
 import json
 import sys
 import re
+import subprocess
 from sha3 import sha3_256 as sha3
 from datetime import datetime
 from jsutils import js_common_intro
@@ -180,6 +181,10 @@ def arr_str(arr):
             str(x).lower()
         ) if has_strings else str(x).lower() for x in arr])
     )
+
+
+def bool_to_str(b):
+    return str(b).lower()
 
 
 def extract_test_dict(name, output):
@@ -360,7 +365,9 @@ def edit_dao_source(
         split_exec_period,
         normal_pricing,
         extra_balance_refund,
-        offer_payment_period):
+        offer_payment_period,
+        payout_freeze_period,
+        vote_status_deadline):
     with open(os.path.join(contracts_dir, 'DAO.sol'), 'r') as f:
         contents = f.read()
 
@@ -460,6 +467,28 @@ def edit_dao_source(
     with open(os.path.join(contracts_dir, 'OfferCopy.sol'), "w") as f:
         f.write(contents)
 
+    # edit PFOffer.sol
+    with open(os.path.join(contracts_dir, 'PFOffer.sol'), 'r') as f:
+        contents = f.read()
+
+    contents = str_replace_or_die(
+        contents,
+        'import "./DAO.sol";',
+        'import "./DAOcopy.sol";'
+    )
+    contents = re_replace_or_die(
+        contents,
+        "payoutFreezePeriod",
+        str(payout_freeze_period)
+    )
+    contents = re_replace_or_die(
+        contents,
+        "voteStatusDeadline",
+        str(vote_status_deadline)
+    )
+    with open(os.path.join(contracts_dir, 'PFOfferCopy.sol'), "w") as f:
+        f.write(contents)
+
     # edit RewardOffer.sol
     with open(os.path.join(contracts_dir, 'RewardOffer.sol'), 'r') as f:
         contents = f.read()
@@ -548,3 +577,26 @@ def available_scenarios():
 
 def to_wei(val_in_ether):
     return val_in_ether * 1000000000000000000
+
+
+def fail_if_outstanding_changes(directory, files):
+    for f in files:
+        fullpath = os.path.join(directory, f)
+        s = subprocess.check_output(["git", "status", fullpath])
+        if "modified:" in s:
+            print(
+                "ERROR: You have outstanding changes in '{}' and the tests"
+                " need to checkout a different version of the contracts. "
+                " Please either commit or stash your changes before running "
+                "the tests.".format(fullpath)
+            )
+            sys.exit(1)
+
+
+def checkout_file(path, version):
+    return subprocess.check_output(["git", "checkout", version, "--", path])
+
+
+def reset_file(path):
+    subprocess.check_output(["git", "reset", "HEAD", path])
+    subprocess.check_output(["git", "checkout", "--", path])

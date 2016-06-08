@@ -166,6 +166,10 @@ contract DAOInterface {
     /// @param _closingTime Date (in Unix time) of the end of the DAO Token Creation
     /// @param _privateCreation If zero the DAO Token Creation is open to public, a
     /// non-zero address means that the DAO Token Creation is only for the address
+    /// @param _tokenName The name that the DAO's token will have
+    /// @param _tokenSymbol The ticker symbol that this DAO token should have
+    /// @param _decimalPlaces The number of decimal places that the token is
+    ///        counted from.
     // This is the constructor: it can not be overloaded so it is commented out
     //  function DAO(
         //  address _curator,
@@ -174,6 +178,9 @@ contract DAOInterface {
         //  uint _minTokensToCreate,
         //  uint _closingTime,
         //  address _privateCreation
+        //  string _tokenName,
+        //  string _tokenSymbol,
+        //  uint8 _decimalPlaces
     //  );
 
     /// @notice Create Token with `msg.sender` as the beneficiary
@@ -364,8 +371,17 @@ contract DAO is DAOInterface, Token, TokenCreation {
         uint _proposalDeposit,
         uint _minTokensToCreate,
         uint _closingTime,
-        address _privateCreation
-    ) TokenCreation(_minTokensToCreate, _closingTime, _privateCreation) {
+        address _privateCreation,
+        string _tokenName, 
+        string _tokenSymbol,
+        uint8 _decimalPlaces
+    ) TokenCreation(
+        _minTokensToCreate, 
+        _closingTime, 
+        _privateCreation, 
+        _tokenName, 
+        _tokenSymbol,
+        _decimalPlaces) {
 
         curator = _curator;
         daoCreator = _daoCreator;
@@ -810,6 +826,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
         if (isFueled
             && now > closingTime
             && !isBlocked(msg.sender)
+            && _to != address(this)
             && transferPaidOut(msg.sender, _to, _value)
             && super.transfer(_to, _value)) {
 
@@ -831,6 +848,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
         if (isFueled
             && now > closingTime
             && !isBlocked(_from)
+            && _to != address(this)
             && transferPaidOut(_from, _to, _value)
             && super.transferFrom(_from, _to, _value)) {
 
@@ -917,7 +935,15 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
     function createNewDAO(address _newCurator) internal returns (DAO _newDAO) {
         NewCurator(_newCurator);
-        return daoCreator.createDAO(_newCurator, 0, 0, now + splitExecutionPeriod);
+        return daoCreator.createDAO(
+            _newCurator,
+            0,
+            0,
+            now + splitExecutionPeriod,
+            name,
+            symbol,
+            decimals
+        );
     }
 
     function numberOfProposals() constant returns (uint _numberOfProposals) {
@@ -968,7 +994,10 @@ contract DAO_Creator {
         address _curator,
         uint _proposalDeposit,
         uint _minTokensToCreate,
-        uint _closingTime
+        uint _closingTime,
+        string _tokenName, 
+        string _tokenSymbol,
+        uint8 _decimalPlaces
     ) returns (DAO _newDAO) {
 
         return new DAO(
@@ -977,7 +1006,10 @@ contract DAO_Creator {
             _proposalDeposit,
             _minTokensToCreate,
             _closingTime,
-            msg.sender
+            msg.sender,
+            _tokenName, 
+            _tokenSymbol,
+            _decimalPlaces
         );
     }
 }

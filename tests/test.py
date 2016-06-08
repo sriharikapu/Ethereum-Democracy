@@ -14,7 +14,8 @@ import inspect
 from string import Template
 from utils import (
     rm_file, determine_binary, ts_now, write_js, available_scenarios,
-    create_genesis, edit_dao_source, eval_test,
+    create_genesis, edit_dao_source, eval_test, checkout_file, reset_file,
+    fail_if_outstanding_changes
 )
 from args import test_args
 
@@ -25,27 +26,39 @@ class TestContext():
         self.ran_scenarios = []
         self.args = args
         self.tests_ok = True
-        self.dao_addr = None
-        self.offer_addr = None
+        self.dao_address = None
+        self.offer_address = None
         self.token_amounts = None
+        self.dao_sources = [
+            "DAO.sol",
+            "DAOTokenCreationProxyTransferer.sol",
+            "ManagedAccount.sol",
+            "Token.sol",
+            "TokenCreation.sol"
+        ]
         self.tests_dir = os.path.dirname(os.path.realpath(__file__))
         datadir = os.path.join(self.tests_dir, "data")
         self.save_file = os.path.join(datadir, "saved")
         self.templates_dir = os.path.join(self.tests_dir, 'templates')
         self.contracts_dir = os.path.dirname(self.tests_dir)
         self.solc = determine_binary(args.solc, 'solc', args.scenario != 'none')
-        self.geth = determine_binary(args.geth, 'geth', args.scenario != 'none')
+        self.geth = determine_binary(
+            args.geth,
+            'geth',
+            args.scenario != 'none' or not args.compile_test
+        )
 
         if args.describe_scenarios:
             self.describe_scenarios()
             sys.exit(0)
 
-        # keep this at end since any data loaded should override constructor
-        if not os.path.isdir(datadir) or args.clean_chain:
-            self.clean_blockchain()
-            self.init_data(args.users_num)
-        else:
-            self.attemptLoad()
+        if not self.args.compile_test:
+            # keep this at end since data loaded should override constructor
+            if not os.path.isdir(datadir) or args.clean_chain:
+                self.clean_blockchain()
+                self.init_data(args.users_num)
+            else:
+                self.attemptLoad()
 
     def init_data(self, accounts_num):
         print("Creating accounts and genesis block ...")
@@ -79,12 +92,12 @@ class TestContext():
             print("Loading DAO from a saved file...")
             with open(self.save_file, 'r') as f:
                 data = json.loads(f.read())
-            self.dao_addr = data['dao_addr']
-            self.dao_creator_addr = data['dao_creator_addr']
-            self.offer_addr = data['offer_addr']
+            self.dao_address = data['dao_address']
+            self.dao_creator_address = data['dao_creator_address']
+            self.offer_address = data['offer_address']
             self.closing_time = data['closing_time']
-            print("Loaded dao_addr: {}".format(self.dao_addr))
-            print("Loaded dao_creator_addr: {}".format(self.dao_creator_addr))
+            print("Loaded dao_address: {}".format(self.dao_address))
+            print("Loaded dao_creator_address: {}".format(self.dao_creator_address))
 
     def clean_blockchain(self):
         """Clean all blockchain data directories apart from the keystore"""
@@ -129,6 +142,34 @@ class TestContext():
                 script
             ])
 
+    def checkout_dao_version(self):
+        if self.args.dao_version == "master":
+            return
+        fail_if_outstanding_changes(self.contracts_dir, self.dao_sources)
+        print("Checking out '{}' DAO contracts ...".format(
+            self.args.dao_version)
+        )
+        for source in self.dao_sources:
+            checkout_file(
+                os.path.join(self.contracts_dir, source),
+                self.args.dao_version
+            )
+
+    def reset_dao_version(self):
+        if self.args.dao_version == "master":
+            return
+        for source in self.dao_sources:
+            reset_file(os.path.join(self.contracts_dir, source))
+
+    def compile_cleanup(self):
+        self.reset_dao_version()
+        rm_file(os.path.join(self.contracts_dir, "DAOcopy.sol"))
+        rm_file(os.path.join(self.contracts_dir, "TokenCreationCopy.sol"))
+        rm_file(os.path.join(self.contracts_dir, "RewardOfferCopy.sol"))
+        rm_file(os.path.join(self.contracts_dir, "OfferCopy.sol"))
+        rm_file(os.path.join(self.contracts_dir, "PFOfferCopy.sol"))
+        rm_file(os.path.join(self.contracts_dir, "USNRewardPayOutCopy.sol"))
+
     def compile_contract(self, contract_path):
         print("    Compiling {}...".format(contract_path))
         data = subprocess.check_output([
@@ -144,55 +185,96 @@ class TestContext():
         if not self.solc:
             print("Error: No valid solc compiler provided")
             sys.exit(1)
+
+        # checkout the requested version of the DAO sources
+        self.checkout_dao_version()
         print("Compiling the DAO contracts...")
+        compile_success = True
+        try:
+            dao_contract = os.path.join(self.contracts_dir, "DAO.sol")
+            if not os.path.isfile(dao_contract):
+                print("DAO contract not found at {}".format(dao_contract))
+                sys.exit(1)
+            dao_contract = edit_dao_source(
+                self.contracts_dir,
+                keep_limits,
+                1,  # min_proposal_debate
+                1,  # min_proposal_split
+                self.args.proposal_halveminquorum,
+                self.args.split_execution_period,
+                self.scenario_uses_extrabalance(),
+                self.args.scenario == "fuel_fail_extrabalance",
+                self.args.deploy_offer_payment_period,
+                self.args.deploy_pfoffer_payout_freeze_period,
+                self.args.deploy_pfoffer_vote_status_deadline
+                if not ctx.args.scenario == "pfoffer_checkvotestatus_fail"
+                else ctx.args.proposal_debate_seconds - 1
+            )
+            # compile USNRewardPayout and all contracts it depends on
+            usn = os.path.join(self.contracts_dir, "USNRewardPayOutCopy.sol")
+            res = self.compile_contract(usn)
+            contract = res["contracts"]["DAO"]
+            DAOCreator = res["contracts"]["DAO_Creator"]
+            self.creator_abi = DAOCreator["abi"]
+            self.creator_bin = DAOCreator["bin"]
+            self.dao_abi = contract["abi"]
+            self.dao_bin = contract["bin"]
+            self.offer_abi = res["contracts"]["RewardOffer"]["abi"]
+            self.offer_bin = res["contracts"]["RewardOffer"]["bin"]
+            self.usn_abi = res["contracts"]["USNRewardPayOut"]["abi"]
+            self.usn_bin = res["contracts"]["USNRewardPayOut"]["bin"]
 
-        dao_contract = os.path.join(self.contracts_dir, "DAO.sol")
-        if not os.path.isfile(dao_contract):
-            print("DAO contract not found at {}".format(dao_contract))
+            # If a compilation test was requested we can stop here.
+            # Until solc gets a version that can compile PFOFfer we don't
+            # add it to the test so that Travis can compile succesfully
+            if self.args.compile_test:
+                print("DAO Contracts compiled successfully!")
+                sys.exit(220)
+
+            # compile PFOffer
+            pfoffer = os.path.join(self.contracts_dir, "PFOfferCopy.sol")
+            res = self.compile_contract(pfoffer)
+            self.pfoffer_abi = res["contracts"]["PFOffer"]["abi"]
+            self.pfoffer_bin = res["contracts"]["PFOffer"]["bin"]
+        except SystemExit as e:
+            if e.code != 220:
+                # 220 is sys.exit(succesful_compilation) in the case of the
+                # simple compilation test. If not then compilation must have
+                # failed.
+                compile_success = False
+                raise
+        except:
+            compile_success = False
+        finally:
+            self.compile_cleanup()
+
+        if not compile_success:
+            print("ERROR at contract compiling")
             sys.exit(1)
-        dao_contract = edit_dao_source(
-            self.contracts_dir,
-            keep_limits,
-            1,  # min_proposal_debate
-            1,  # min_proposal_split
-            self.args.proposal_halveminquorum,
-            self.args.split_execution_period,
-            self.scenario_uses_extrabalance(),
-            self.args.scenario == "fuel_fail_extrabalance",
-            self.args.deploy_offer_payment_period
-        )
-        usn = os.path.join(self.contracts_dir, "USNRewardPayOutCopy.sol")
-        res = self.compile_contract(usn)
-        contract = res["contracts"]["DAO"]
-        DAOCreator = res["contracts"]["DAO_Creator"]
-        self.creator_abi = DAOCreator["abi"]
-        self.creator_bin = DAOCreator["bin"]
-        self.dao_abi = contract["abi"]
-        self.dao_bin = contract["bin"]
-        self.offer_abi = res["contracts"]["RewardOffer"]["abi"]
-        self.offer_bin = res["contracts"]["RewardOffer"]["bin"]
-        self.usn_abi = res["contracts"]["USNRewardPayOut"]["abi"]
-        self.usn_bin = res["contracts"]["USNRewardPayOut"]["bin"]
+        elif self.args.compile_test:
+            sys.exit(0)
 
-        # also delete the temporary created files
-        rm_file(os.path.join(self.contracts_dir, "DAOcopy.sol"))
-        rm_file(os.path.join(self.contracts_dir, "TokenCreationCopy.sol"))
-        rm_file(os.path.join(self.contracts_dir, "RewardOfferCopy.sol"))
-        rm_file(os.path.join(self.contracts_dir, "OfferCopy.sol"))
-        rm_file(os.path.join(self.contracts_dir, "USNRewardPayOutCopy.sol"))
-
-    def create_js_file(self, substitutions, cb_before_creation=None):
+    def create_js_file(
+            self,
+            substitutions,
+            specific_name=None,
+            cb_before_creation=None
+    ):
         """
-        Creates a js file from a template
+        Creates a js file from a template called template.js found in the same
+        directory as the scenario. Alternatively if specific_name is given then
+        it creates a js file from that template.
 
         Parameters
         ----------
-        name : string
-        The name of the javascript file without the '.js' extension
-
         substitutions : dict
         A dict of the substitutions to make in the template
         file in order to produce the final js
+
+        specific_name : string
+        (Optional) If given then the generic template.js file is not chosen but
+        instead a file of the specific given name ending with _template.js is
+        used.
 
         cb_before_creation : function
         (Optional) A callback function to be called right before substitution.
@@ -200,13 +282,15 @@ class TestContext():
         (test_framework_object, name_of_js_file, substitutions_dict)
         and it returns the edited substitutions map
         """
-        name = self.running_scenario()
+        scenario_name = self.running_scenario()
+        name = specific_name if specific_name else self.running_scenario()
+        scenario_dir = os.path.join(self.tests_dir, "scenarios", scenario_name)
+        fullpath = os.path.join(
+            scenario_dir,
+            name + '_template.js' if specific_name else 'template.js'
+        )
         print("Creating {}.js".format(name))
-        scenario_dir = os.path.join(self.tests_dir, "scenarios", name)
-        with open(
-                os.path.join(scenario_dir, 'template.js'),
-                'r'
-        ) as f:
+        with open(fullpath, 'r') as f:
             data = f.read()
         tmpl = Template(data)
         if cb_before_creation:
@@ -262,11 +346,11 @@ class TestContext():
         self.ran_scenarios.append(name)
 
     def run_test(self, args):
+        # All scenarios would need to have the contracts compiled
+        self.compile_contracts(args.keep_limits)
         if not self.geth:
             print("Error: No valid geth binary provided/found")
             sys.exit(1)
-        # All scenarios would need to have the contracts compiled
-        self.compile_contracts(args.keep_limits)
         self.run_scenario(self.args.scenario)
 
 if __name__ == "__main__":

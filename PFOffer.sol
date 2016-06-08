@@ -30,11 +30,31 @@ along with the DAO.  If not, see <http://www.gnu.org/licenses/>.
   - Client:     the DAO that gives ether to the Contractor. It signs off
                 the Offer, can adjust daily withdraw limit or even fire the
                 Contractor.
+
+  -- Important Note For Compilation --
+  This contract also reads from the DAO's proposal struct array. There used to
+  be a solidity bug (https://github.com/ethereum/solidity/issues/598#issuecomment-224015639)
+  that is now fixed which would result in wrong values when reading from the
+  proposals array.
+
+  Use a solc that includes commit:  0a0fc04641787ce057a9fcc9e366ea898b1fd8d6
+  to be sure that the contract is compiled with the fix and that the proposals
+  member attributes are read correctly. This comment will be updated as soon
+  as the fix makes it into a solc release.
 */
 
 import "./DAO.sol";
 
 contract PFOffer {
+
+    // Period of time after which money can be withdrawn from this contract
+    uint constant payoutFreezePeriod = 3 weeks;
+    // Time before the end of the voting period after which
+    // checkVoteStatus() can no longer be called
+    uint constant voteStatusDeadline = 48 hours;
+    // The minQuorum for which to accept the voteStatus check and modify
+    // the wasApprovedBeforeDeadline flag
+    uint constant minQuorum = 15;
 
     // The total cost of the Offer. Exactly this amount is transfered from the
     // Client to the Offer contract when the Offer is signed by the Client.
@@ -45,6 +65,7 @@ contract PFOffer {
     // signed.
     // Set once by the Offerer.
     uint oneTimeCosts;
+    bool oneTimeCostsPaid;
 
     // The minimal daily withdraw limit that the Contractor accepts.
     // Set once by the Offerer.
@@ -68,9 +89,16 @@ contract PFOffer {
     DAO client; // address of DAO
     DAO originalClient; // address of DAO who signed the contract
     bool isContractValid;
+    uint proposalID;
+    bool wasApprovedBeforeDeadline;
 
     modifier onlyClient {
         if (msg.sender != address(client))
+            throw;
+        _
+    }
+    modifier onlyContractor {
+        if (msg.sender != address(contractor))
             throw;
         _
     }
@@ -141,15 +169,28 @@ contract PFOffer {
         return isContractValid;
     }
 
+    function getOneTimeCostsPaid() noEther constant returns (bool) {
+        return oneTimeCostsPaid;
+    }
+
+    function getWasApprovedBeforeDeadline() noEther constant returns (bool) {
+        return wasApprovedBeforeDeadline;
+    }
+
+    function getProposalID() noEther constant returns (uint) {
+        return proposalID;
+    }
+
     function sign() {
         if (msg.sender != address(originalClient) // no good samaritans give us ether
             || msg.value != totalCosts    // no under/over payment
-            || dateOfSignature != 0)      // don't sign twice
+            || dateOfSignature != 0       // don't sign twice
+            || !wasApprovedBeforeDeadline)// fail if the voteStatusCheck was not done
             throw;
 
         dateOfSignature = now;
         isContractValid = true;
-        lastPayment = now + 3 weeks;
+        lastPayment = now + payoutFreezePeriod;
     }
 
     function setDailyWithdrawLimit(uint128 _dailyWithdrawLimit) onlyClient noEther {
@@ -170,7 +211,7 @@ contract PFOffer {
     // Executing this function before the Offer is signed off by the Client
     // makes no sense as this contract has no ether.
     function getDailyPayment() noEther {
-        if (msg.sender != contractor || now < dateOfSignature + 3 weeks)
+        if (msg.sender != contractor || now < dateOfSignature + payoutFreezePeriod)
             throw;
         uint timeSinceLastPayment = now - lastPayment;
         // Calculate the amount using 1 second precision.
@@ -183,11 +224,44 @@ contract PFOffer {
     }
 
     function getOneTimePayment() noEther {
-        if (msg.sender != contractor || now < dateOfSignature + 3 weeks )
+        if (msg.sender != contractor
+            || now < dateOfSignature + payoutFreezePeriod
+            || oneTimeCostsPaid ) {
             throw;
+        }
 
         if (!contractor.send(oneTimeCosts))
             throw;
+
+        oneTimeCostsPaid = true;
+    }
+
+    // Once a proposal is submitted, the Contractor should call this
+    // function to register its proposal ID with the offer contract
+    // so that the vote can be watched and checked with `checkVoteStatus()`
+    function watchProposal(uint _proposalID) noEther onlyContractor {
+        var (recipient,,,votingDeadline,open,) = client.proposals(_proposalID);
+        if (recipient == address(this)
+            && votingDeadline > now
+            && open
+            && proposalID == 0) {
+           proposalID =  _proposalID;
+        }
+    }
+
+    // The proposal will not accept the results of the vote if it wasn't able
+    // to be sure that YEA was able to succeed 48 hours before the deadline
+    function checkVoteStatus() noEther {
+        var (,,,votingDeadline,,,,,,yea,nay,) = client.proposals(proposalID);
+        uint quorum = (yea + nay) * 100 / client.totalSupply();
+
+        // Only execute until 48 hours before the deadline
+        if (now > votingDeadline - voteStatusDeadline) {
+            throw;
+        }
+        // If quorum is met and majority is for it then the prevote
+        // check can be considered as succesfull
+        wasApprovedBeforeDeadline = (quorum >= minQuorum && yea > nay);
     }
 
     // Change the client DAO by giving the new DAO's address
