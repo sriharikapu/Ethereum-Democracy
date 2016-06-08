@@ -125,6 +125,9 @@ contract DAOInterface {
         bool newCurator;
         // Data needed for splitting the DAO
         SplitData[] splitData;
+        // true if more tokens are in favour of the proposal than opposed to it at
+        // least 2 days before the voting deadline
+        bool preSupport;
         // Number of Tokens in favor of the proposal
         uint yea;
         // Number of Tokens opposed to the proposal
@@ -508,6 +511,17 @@ contract DAO is DAOInterface, Token, TokenCreation {
         Voted(_proposalID, _supportsProposal, msg.sender);
     }
 
+    function verifyPreSupport(uint _proposalID) {
+        Proposal p = proposals[_proposalID];
+        if (now < p.votingDeadline - 2 days) {
+            if (p.yea > p.nay) {
+                p.preSupport = true;
+            }
+            else
+                p.preSupport = false;
+        }
+    }
+
 
     function executeProposal(
         uint _proposalID,
@@ -547,7 +561,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
         bool proposalCheck = true;
 
-        if (p.amount > actualBalance())
+        if (p.amount > actualBalance() || p.preSupport == false)
             proposalCheck = false;
 
         uint quorum = p.yea;
@@ -628,7 +642,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
             (balances[msg.sender] * actualBalance()) /
             totalSupply;
 
-		msg.sender.call.value(fundsToBeMoved);
+        msg.sender.call.value(fundsToBeMoved);
 
         // Assign reward rights
         uint rewardTokenToBeMoved =
@@ -655,7 +669,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
         balances[msg.sender] = 0;
         paidOut[msg.sender] = 0;
         return true;
-	}
+    }
 
     function splitDAO(
         uint _proposalID,
@@ -865,7 +879,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
 
     function changeAllowedRecipients(address _recipient, bool _allowed) noEther external returns (bool _success) {
-        if (msg.sender != curator)
+        if (msg.sender != curator && (msg.sender != address(this) || _allowed))
             throw;
         allowedRecipients[_recipient] = _allowed;
         AllowedRecipientChanged(_recipient, _allowed);
@@ -931,15 +945,15 @@ contract DAO is DAOInterface, Token, TokenCreation {
         return isBlocked(msg.sender);
     }
 
-	function combinedBalanceOf(address _address){
-		DAO(parentDAO).balanceOf(_address) + balanceOf(_address);
-	}
+    function combinedBalanceOf(address _address){
+        DAO(parentDAO).balanceOf(_address) + balanceOf(_address);
+    }
 
-	// approve DAO to transfer your tokens prior to that
-	function swapTokens(address _address) {
-		uint balance = DAO(parentDAO).balanceOf(_address);
-		if (DAO(parentDAO).transferFrom(_address, this, balance)) {
-			balances[msg.sender] += balance;
+    // approve DAO to transfer your tokens prior to that
+    function swapTokens(address _address) {
+        uint balance = DAO(parentDAO).balanceOf(_address);
+        if (DAO(parentDAO).transferFrom(_address, this, balance)) {
+            balances[msg.sender] += balance;
             totalSupply += balance;
             if (totalSupply >= minTokensToCreate && !isFueled) {
                 isFueled = true;
