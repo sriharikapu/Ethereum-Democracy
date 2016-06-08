@@ -34,10 +34,10 @@ contract TokenCreationInterface {
     uint public minTokensToCreate;
     // True if the DAO reached its minimum fueling goal, false otherwise
     bool public isFueled;
-    // For DAO splits - if privateCreation is 0, then it is a public token
-    // creation, otherwise only the address stored in privateCreation is
+    // For DAO splits - if parentDAO is 0, then it is a public token
+    // creation, otherwise only the address stored in parentDAO is
     // allowed to create tokens
-    address public privateCreation;
+    address public parentDAO;
     // hold extra ether which has been sent after the DAO token
     // creation rate has increased
     ManagedAccount public extraBalance;
@@ -81,14 +81,14 @@ contract TokenCreation is TokenCreationInterface, Token {
     function TokenCreation(
         uint _minTokensToCreate,
         uint _closingTime,
-        address _privateCreation,
+        address _parentDAO,
         string _tokenName,
         string _tokenSymbol,
         uint8 _decimalPlaces) {
 
         closingTime = _closingTime;
         minTokensToCreate = _minTokensToCreate;
-        privateCreation = _privateCreation;
+        parentDAO = _parentDAO;
         name = _tokenName;
         symbol = _tokenSymbol;
         decimals = _decimalPlaces;
@@ -97,7 +97,7 @@ contract TokenCreation is TokenCreationInterface, Token {
 
     function createTokenProxy(address _tokenHolder) returns (bool success) {
         if (now < closingTime && msg.value > 0
-            && (privateCreation == 0 || privateCreation == msg.sender)) {
+            && (parentDAO == 0 || parentDAO == msg.sender)) {
 
             uint token = msg.value;
             balances[_tokenHolder] += token;
@@ -113,7 +113,7 @@ contract TokenCreation is TokenCreationInterface, Token {
     }
 
     function refund() noEther {
-        if (now > closingTime && !isFueled && privateCreation == 0) {
+        if (now > closingTime && !isFueled && parentDAO == 0) {
             if (msg.sender.call.value(balances[msg.sender])()) {
                 Refund(msg.sender, balances[msg.sender]);
                 totalSupply -= balances[msg.sender];

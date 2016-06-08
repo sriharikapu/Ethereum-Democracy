@@ -47,8 +47,6 @@ contract DAOInterface {
     uint constant splitGracePeriod = 3 days;
     // Time for vote freeze. A proposal needs to have majority support before votingDeadline - preSupportTime
     uint constant preSupportTime = 2 days;
-    // address of parent DAO
-    address constant parentDAO = 0xbb9bc244d798123fde783fcc1c72d3bb8c189413;
 
     // Proposals to spend the DAO's ether or to choose a new Curator
     Proposal[] public proposals;
