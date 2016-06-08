@@ -130,11 +130,12 @@ contract DAOInterface {
         bool newCurator;
         // Data needed for splitting the DAO
         SplitData[] splitData;
-        // dependencies in other proposals. List of proposal IDs and list defining whether the other proposal needs to have passed or failed
+        // Dependencies in other proposals. List of proposal IDs and list defining
+        // whether the other proposal needs to have passed or failed
         uint[] dependencies;
         bool[] dependenciesType;
         // true if more tokens are in favour of the proposal than opposed to it at
-        // least 2 days before the voting deadline
+        // least `preSupportTime` before the voting deadline
         bool preSupport;
         // Number of Tokens in favor of the proposal
         uint yea;
