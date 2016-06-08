@@ -88,6 +88,9 @@ contract DAOInterface {
     // tokens). The address points to the proposal ID.
     mapping (address => uint) public blocked;
 
+    // Map of addresses and proposal voted on by this address
+    mapping (address => uint[]) public votingRegister;
+
     // The minimum deposit (in wei) required to submit any proposal that is not
     // requesting a new Curator (no deposit is required for splits)
     uint public proposalDeposit;
@@ -516,12 +519,8 @@ contract DAO is DAOInterface, Token, TokenCreation {
     ) onlyTokenholders noEther returns (uint _voteID) {
 
         Proposal p = proposals[_proposalID];
-        if (p.votedYes[msg.sender]
-            || p.votedNo[msg.sender]
-            || now >= p.votingDeadline) {
 
-            throw;
-        }
+        unVote(_proposalID);
 
         if (_supportsProposal) {
             p.yea += balances[msg.sender];
@@ -539,7 +538,43 @@ contract DAO is DAOInterface, Token, TokenCreation {
             blocked[msg.sender] = _proposalID;
         }
 
+        votingRegister[msg.sender].push(_proposalID);
         Voted(_proposalID, _supportsProposal, msg.sender);
+    }
+
+    function unVote(uint _proposalID){
+        Proposal p = proposals[_proposalID];
+
+        if (now >= p.votingDeadline) {
+            throw;
+        }
+
+        if ((p.votedYes[msg.sender]
+            || p.votedNo[msg.sender])
+            && now > p.votingDeadline - preSupportTime) {
+            throw;
+        }
+
+        if (p.votedYes[msg.sender]) {
+            p.yea -= balances[msg.sender];
+            p.votedYes[msg.sender] = false;
+        }
+
+        if (p.votedNo[msg.sender]) {
+            p.nay -= balances[msg.sender];
+            p.votedNo[msg.sender] = false;
+        }
+    }
+
+    function unVoteAll() {
+        for (uint i = 0; i < votingRegister[msg.sender].length; i++) {
+            Proposal p = proposals[i];
+            if (now < p.votingDeadline)
+                unVote(i);
+        }
+
+        votingRegister[msg.sender].length = 0;
+        blocked[msg.sender] = 0;
     }
 
     function verifyPreSupport(uint _proposalID) {
@@ -668,12 +703,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
         address _newCurator
     ) noEther onlyTokenholders returns (bool _success) {
 
-        unblockMe();
-
-        // Did you already vote on another proposal?
-        if (blocked[msg.sender] != _proposalID && blocked[msg.sender] != 0)  {
-            throw;
-        }
+        unVoteAll();
 
         // Move ether
         uint fundsToBeMoved =
@@ -726,12 +756,12 @@ contract DAO is DAOInterface, Token, TokenCreation {
             // Is it a new curator proposal?
             || !p.newCurator
             // Have you voted for this split?
-            || !p.votedYes[msg.sender]
-            // Did you already vote on another proposal?
-            || (blocked[msg.sender] != _proposalID && blocked[msg.sender] != 0) )  {
+            || !p.votedYes[msg.sender]) {
 
             throw;
         }
+
+        unVoteAll();
 
         // If the new DAO doesn't exist yet, create the new DAO and store the
         // current split data
@@ -848,6 +878,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
         if (isFueled
             && now > closingTime
             && !isBlocked(msg.sender)
+            && !isBlocked(_to)
             && _to != address(this)
             && transferPaidOut(msg.sender, _to, _value)
             && super.transfer(_to, _value)) {
@@ -870,6 +901,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
         if (isFueled
             && now > closingTime
             && !isBlocked(_from)
+            && !isBlocked(_to)
             && _to != address(this)
             && transferPaidOut(_from, _to, _value)
             && super.transferFrom(_from, _to, _value)) {
