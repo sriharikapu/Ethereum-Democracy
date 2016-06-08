@@ -113,7 +113,7 @@ contract TokenCreation is TokenCreationInterface, Token {
     }
 
     function refund() noEther {
-        if (now > closingTime && !isFueled) {
+        if (now > closingTime && !isFueled && privateCreation == 0) {
             if (msg.sender.call.value(balances[msg.sender])()) {
                 Refund(msg.sender, balances[msg.sender]);
                 totalSupply -= balances[msg.sender];
