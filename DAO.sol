@@ -956,6 +956,8 @@ contract DAO is DAOInterface, Token, TokenCreation {
     function changeAllowedRecipients(address _recipient, bool _allowed) noEther external returns (bool _success) {
         if (msg.sender != curator && (msg.sender != address(this) || _allowed))
             throw;
+        if (_recipient == address(this))
+            throw;
         allowedRecipients[_recipient] = _allowed;
         AllowedRecipientChanged(_recipient, _allowed);
         return true;
