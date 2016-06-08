@@ -358,7 +358,8 @@ contract DAOInterface {
         address recipient,
         uint amount,
         bool newCurator,
-        string description
+        string description,
+        bytes transactionData
     );
     event Voted(uint indexed proposalID, bool position, address indexed voter);
     event ProposalTallied(uint indexed proposalID, bool result, uint quorum);
@@ -497,7 +498,8 @@ contract DAO is DAOInterface, Token, TokenCreation {
             _recipient,
             _amount,
             _newCurator,
-            _description
+            _description,
+            _transactionData
         );
     }
 
