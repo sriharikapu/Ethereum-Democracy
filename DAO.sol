@@ -696,7 +696,6 @@ contract DAO is DAOInterface, Token, TokenCreation {
     }
 
     function withdraw(
-        uint _proposalID,
         address _newCurator
     ) noEther onlyTokenholders returns (bool _success) {
 
