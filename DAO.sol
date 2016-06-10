@@ -565,7 +565,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
     function unVoteAll() {
         for (uint i = 0; i < votingRegister[msg.sender].length; i++) {
-            Proposal p = proposals[i];
+            Proposal p = proposals[votingRegister[msg.sender][i]];
             if (now < p.votingDeadline)
                 unVote(i);
         }
@@ -696,7 +696,6 @@ contract DAO is DAOInterface, Token, TokenCreation {
     }
 
     function withdraw(
-        uint _proposalID,
         address _newCurator
     ) noEther onlyTokenholders returns (bool _success) {
 
