@@ -41,8 +41,6 @@ contract TokenCreationInterface {
     // hold extra ether which has been sent after the DAO token
     // creation rate has increased
     ManagedAccount public extraBalance;
-    // tracks the amount of wei given from each contributor (used for refund)
-    mapping (address => uint256) weiGiven;
 
     /// @dev Constructor setting the minimum fueling goal and the
     /// end of the Token Creation
