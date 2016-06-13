@@ -913,6 +913,19 @@ contract DAO is DAOInterface, Token, TokenCreation {
     function unblockMe() returns (bool) {
         return isBlocked(msg.sender);
     }
+
+    // approve DAO to transfer your tokens prior to that
+    function swapTokens() {
+        uint balance = DAO(parentDAO).balanceOf(msg.sender); //parentDAO declared in removing extraBalance PR
+        if (DAO(parentDAO).transferFrom(msg.sender, this, balance)) {
+            balances[msg.sender] += balance;
+            totalSupply += balance;
+            if (totalSupply >= minTokensToCreate && !isFueled) {
+                isFueled = true;
+                FuelingToDate(totalSupply);
+            }
+        }
+    }
 }
 
 contract DAO_Creator {
