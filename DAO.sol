@@ -403,6 +403,26 @@ contract DAO is DAOInterface, Token, TokenCreation {
         return true;
     }
 
+    function checkNewProposalRestrictions(
+        address _recipient,
+        bytes _transactionData) internal returns (bool) {
+        if (_recipient == privateCreation && _transactionData.length >= 4 &&
+            // the new DAO should not be able to transfer any of its parent DAO tokens
+            ( // 0x095ea7b3: approve()
+                (_transactionData[0] == 0x09 && _transactionData[1] == 0x5e
+                 && _transactionData[2] == 0xa7 && _transactionData[3] == 0xb3))
+            || ( // 0xa9059cbb: transfer(address,uint256)
+                (_transactionData[0] == 0xa9 && _transactionData[1] == 0x05
+                 && _transactionData[2] == 0x9c && _transactionData[3] == 0xbb))
+            || ( // 0x23b872dd: transferFrom(address,address,uint256)
+                (_transactionData[0] == 0x23 && _transactionData[1] == 0xb8
+                 && _transactionData[2] == 0x72 && _transactionData[3] == 0xdd))
+            ) {
+            return false;
+        }
+        return true;
+    }
+
 
     function newProposal(
         address _recipient,
@@ -433,7 +453,8 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
         if (!isFueled
             || now < closingTime
-            || (msg.value < proposalDeposit && !_newCurator)) {
+            || (msg.value < proposalDeposit && !_newCurator)
+            || !checkNewProposalRestrictions(_recipient, _transactionData)) {
 
             throw;
         }
