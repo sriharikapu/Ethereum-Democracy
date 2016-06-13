@@ -64,6 +64,8 @@ contract DAOInterface {
     mapping (address => uint) public rewardToken;
     // Total supply of rewardToken
     uint public totalRewardToken;
+    // DAO tokens recieved from the parent DAO through swapTokens
+    uint public tokensReceived;
 
     // The account used to manage the rewards which are to be distributed to the
     // DAO Token Holders of this DAO
@@ -855,6 +857,7 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
     function minQuorum(uint _value) internal constant returns (uint _minQuorum) {
         // minimum of 20% and maximum of 53.33%
+        uint combinedTotalSupply = DAO(privateCreation).totalSupply() + totalSupply - tokensReceived;
         return totalSupply / minQuorumDivisor +
             (_value * totalSupply) / (3 * (actualBalance() + rewardToken[address(this)]));
     }
@@ -916,10 +919,12 @@ contract DAO is DAOInterface, Token, TokenCreation {
 
     // approve DAO to transfer your tokens prior to that
     function swapTokens() {
-        uint balance = DAO(parentDAO).balanceOf(msg.sender); //parentDAO declared in removing extraBalance PR
-        if (DAO(parentDAO).transferFrom(msg.sender, this, balance)) {
+         // privateCreation renamed to parentDAO removing extraBalance PR!
+        uint balance = DAO(privateCreation).balanceOf(msg.sender);
+        if (DAO(privateCreation).transferFrom(msg.sender, this, balance)) {
             balances[msg.sender] += balance;
             totalSupply += balance;
+            tokensReceived += balance;
             if (totalSupply >= minTokensToCreate && !isFueled) {
                 isFueled = true;
                 FuelingToDate(totalSupply);
