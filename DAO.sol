@@ -414,9 +414,15 @@ contract DAO is DAOInterface, Token, TokenCreation {
             || ( // 0xa9059cbb: transfer(address,uint256)
                 (_transactionData[0] == 0xa9 && _transactionData[1] == 0x05
                  && _transactionData[2] == 0x9c && _transactionData[3] == 0xbb))
+            || ( // 0x4e10c3ee: transferWithoutReward(address,uint256)
+                (_transactionData[0] == 0x4e && _transactionData[1] == 0x10
+                 && _transactionData[2] == 0xc3 && _transactionData[3] == 0xee))
             || ( // 0x23b872dd: transferFrom(address,address,uint256)
                 (_transactionData[0] == 0x23 && _transactionData[1] == 0xb8
                  && _transactionData[2] == 0x72 && _transactionData[3] == 0xdd))
+            || ( // 0xdbde1988: transferFromWithoutReward(address,address,uint256)
+                (_transactionData[0] == 0xdb && _transactionData[1] == 0xde
+                 && _transactionData[2] == 0x19 && _transactionData[3] == 0x88))
             ) {
             return false;
         }
