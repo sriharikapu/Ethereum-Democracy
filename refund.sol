@@ -17,19 +17,20 @@ along with the DAO.  If not, see <http://www.gnu.org/licenses/>.
 
 // TODO: all constants need to be double checked
 import "github.com/slockit/DAO/DAO.sol";
+import "github.com/slockit/DAO/refundChild.sol";
 
 contract Refund {
-    address constant public childRefund = 0x00; // to be replaced with the address of the childDAO refund contract
+    ChildRefund public childRefund;
     uint constant public totalSupply = 11712722930974665882186911;
     uint constant public totalWeiSupply = 12072858342395652843028271;
     bool refundChild;
 
-    function withdraw(DAO _dao) internal {
-        if (!refundChild) {
-            refundChild = true;
-            childRefund.send(174558484783966581114679);
-        }
+    function Refund() {
+        childRefund = new ChildRefund();
+        childRefund.send(174558484783966581114679);
+    }
 
+    function withdraw(DAO _dao) internal {
         uint balance = _dao.balanceOf(msg.sender);
 
         if (!_dao.transferFrom(msg.sender, this, balance) || !msg.sender.send(balance * totalWeiSupply / totalSupply))
