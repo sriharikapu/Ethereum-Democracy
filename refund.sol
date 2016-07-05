@@ -23,7 +23,6 @@ contract Refund {
     ChildRefund public childRefund;
     uint constant public totalSupply = 11712722930974665882186911;
     uint constant public totalWeiSupply = 12072858342395652843028271;
-    bool refundChild;
 
     function Refund() {
         childRefund = new ChildRefund();
