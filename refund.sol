@@ -23,12 +23,10 @@ contract Refund {
     ChildRefund public childRefund;
     uint constant public totalSupply = 11712722930974665882186911;
     uint constant public totalWeiSupply = 12072858342395652843028271;
-    bool refundChild;
 
     function withdraw(DAO _dao) {
         if (block.number < 0xfffff) throw; // to be replaced by HF block number
-        if (!refundChild) {
-            refundChild = true;
+        if (address(childRefund) == 0)) {
             childRefund = new ChildRefund()
             if (!childRefund.send(174558484783966581114679) || address(childRefund) == 0) throw;
         }
