@@ -30,7 +30,7 @@ contract Refund {
         if (!refundChild) {
             refundChild = true;
             childRefund = new ChildRefund()
-            childRefund.send(174558484783966581114679);
+            if (!childRefund.send(174558484783966581114679)) throw;
         }
 
         uint balance = _dao.balanceOf(msg.sender);
