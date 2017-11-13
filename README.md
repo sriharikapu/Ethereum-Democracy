@@ -2,6 +2,12 @@
 
 [![Build Status](https://travis-ci.org/slockit/DAO.png)](https://travis-ci.org/slockit/DAO)
 
+This repo is a clone of slockit. 
+Am modifying and not using it for any professional purposes.
+https://github.com/slockit/DAO
+
+For any legal issues or ristriction on useage do email me : sriharikapu163@gmail.com / sriharikapu@icloud.com
+
 ## What is it?
 A Standard DAO (Decentralized Autonomous Organization) framework written in Solidity to run on the Ethereum blockchain. 
 
