@@ -7,6 +7,8 @@ Am modifying and not using it for any professional purposes.
 https://github.com/slockit/DAO
 
 For any legal issues or ristriction on useage do email me : sriharikapu163@gmail.com / sriharikapu@icloud.com
+Ethereum Blog Post: https://blog.ethereum.org/2015/12/04/ethereum-in-practice-part-2-how-to-build-a-better-democracy-in-under-a-100-lines-of-code/
+
 
 ## What is it?
 A Standard DAO (Decentralized Autonomous Organization) framework written in Solidity to run on the Ethereum blockchain. 
